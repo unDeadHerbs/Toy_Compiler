@@ -2,7 +2,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include "tokenizer.h"
+#include "parser.h"
+
+void print_tree(struct node* root) {
+	if (!root) return;
+	static int depth = 0;
+	int i;
+	for (i = 0; i < depth; i++) printf("\t");
+	printf("%s\n", root->token);
+	depth++;
+	print_tree(root->child);
+	depth--;
+	print_tree(root->sibling);
+}
 
 int main(int argc, char** argv) {
 	if (argc != 2) {
@@ -15,12 +27,10 @@ int main(int argc, char** argv) {
 		perror("open");
 		exit(-1);
 	}
-	char buf[33];
+	struct node* tree;
 	do {
-		if (-1 == gettok(fd, buf)) {
-			perror("gettok");
-			exit(-1);
-		}
-		printf("Read: %s\n", buf);
-	} while (*buf);
+		tree = parse_next(fd);
+		print_tree(tree);
+		free_node(tree);
+	} while (tree);
 }

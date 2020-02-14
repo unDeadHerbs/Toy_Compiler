@@ -1,13 +1,11 @@
 CC          = clang
-WARNINGS    = -pedantic-errors -Weverything -Wno-dangling-else -Werror -fno-builtin
+NONWARNINGS = -Wno-padded -Wno-missing-prototypes
+WARNINGS    = -pedantic-errors -Weverything -Wno-dangling-else -Werror -fno-builtin $(NONWARNINGS)
 LIBARYFLAGS = 
 CCFLAGS     = -std=c89 $(WARNINGS) $(LIBARYFLAGS) -g $(SANS)
 
 .PHONY:all
-all: format TAGS deps mains
-seg: clean msan
-msan:
-	make --no-print-directory all SANS=-fsanitize=address
+all: format TAGS main.bin
 
 # generate the etags file
 TAGS:
@@ -16,34 +14,11 @@ TAGS:
 	@echo "Generated Tags"
 
 # use the etags file to find all excicutables
-.PHONY:mains
-mains:
-	@for f in `ls *.c` ; do \
-		if etags $$f -o - | grep "int main(" - > /dev/null; \
-			then echo $$f | sed -e 's/[.]c$$/.bin/' -e 's/.*/make --no-print-directory &/' |sh; \
-		fi ; \
-	done
+main.bin: main.o parser.o tokenizer.o
+	$(CC) $(CCFLAGS) $(LIBARYFLAGS) $^ -o $@
 
-.PHONY:deps
-deps:
-	-@for f in `ls *.c` ; do \
-		echo $$f | sed -e 's,[.]c$$,.d,' -e 's/.*/make -s .d\/&/'|sh; \
-	done
-
-# dependancy making
-DEPDIR      = .d
-$(shell mkdir -p $(DEPDIR) > /dev/null)
-.PRECIOUS: $(DEPDIR)/%.d
-$(DEPDIR)/%.d: %.c
-	@set -e; rm -f $@; \
-	 $(CC) -MM $(CCFLAGS) $< > $@.$$$$; \
-	 echo ".INTERMEDIATE: $*.o" >> $@; \
-	 sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ >> $@; \
-	 sed -e 's,[.]o\([ :]\),.bin\1,g' -e 's,[.][hc]\>,.o,g' < $@.$$$$ >> $@; \
-	 printf '\t$$(CC) $$(CCFLAGS) $$(LIBARYFLAGS) -o $$@ $$^' >> $@; \
-	 echo >> $@; \
-	 rm -f $@.$$$$
-	@echo "remade $@"
+%.o: %.c %.h
+	$(CC) $(CCFLAGS) $(LIBARYFLAGS) -c $< -o $@
 
 # emacs flycheck-mode
 .PHONY:check-syntax csyntax
@@ -57,7 +32,7 @@ clean:
 
 .PHONY: format
 format:
-	@find|egrep '.*[.](c|h)$$'|sed 's/[] ()'\''\\[&;]/\\&/g'|xargs clang-format -i
+	@git ls-files|egrep '.*[.](c|h)$$'|xargs clang-format -i
 	@echo "reformatted code"
 
 
