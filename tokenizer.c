@@ -121,7 +121,6 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 				if (cur_char() == ':') consume_char();
 				break;
 			case '"':
-
 				consume_char();
 				while (cur_char() != '"') {
 					if (cur_char() == '\\') consume_char();
@@ -148,13 +147,15 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 				consume_char();
 				if (cur_char() == 'i') {
 					consume_char();
-					/* clang-format off */
-					if (cur_char() == 'f'){
+					if (cur_char() == 'f') {
 						consume_char();
-						if (cur_char() == 'n') consume_char();
-						if (cur_char() != 'd') error(EINVAL); else consume_char();
-						if (cur_char() != 'e') error(EINVAL); else consume_char();
-						if (cur_char() != 'f') error(EINVAL); else consume_char();
+						if (cur_char() != ' ') {
+							/* clang-format off */
+							if (cur_char() == 'n') consume_char();
+							if (cur_char() != 'd') error(EINVAL); else consume_char();
+							if (cur_char() != 'e') error(EINVAL); else consume_char();
+							if (cur_char() != 'f') error(EINVAL); else consume_char();
+						}
 					}else{
 						if (cur_char() != 'n') error(EINVAL); else consume_char();
 						if (cur_char() != 'c') error(EINVAL); else consume_char();
@@ -183,9 +184,8 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 					if (cur_char() != 'i') error(EINVAL); else consume_char();
 					if (cur_char() != 'n') error(EINVAL); else consume_char();
 					if (cur_char() != 'e') error(EINVAL); else consume_char();
-					if (cur_char() != ' ') error(EINVAL); else consume_char();
+					if (cur_char() != ' ') error(EINVAL); else nom();
 					/* clang-format on */
-					break;
 				} else if (cur_char() == 'u') {
 					consume_char();
 					/* clang-format off */
@@ -193,27 +193,26 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 					if (cur_char() != 'd') error(EINVAL); else consume_char();
 					if (cur_char() != 'e') error(EINVAL); else consume_char();
 					if (cur_char() != 'f') error(EINVAL); else consume_char();
+					if (cur_char() != ' ') error(EINVAL); else nom();
 					/* clang-format on */
 				} else if (cur_char() == 'e') {
 					consume_char();
 					/* clang-format off */
 					if (cur_char() == 'n') {
 						consume_char();
-					if (cur_char() != 'd') error(EINVAL); else consume_char();
-					if (cur_char() != 'i') error(EINVAL); else consume_char();
-					if (cur_char() != 'f') error(EINVAL); else consume_char();
-				}else{
-					if (cur_char() != 'l') error(EINVAL); else consume_char();
-					if (cur_char() != 's') error(EINVAL); else consume_char();
-					if (cur_char() != 'e') error(EINVAL); else consume_char();
-					if (isspace(cur_char())) break;
-					if (cur_char() != 'i') error(EINVAL); else consume_char();
-					if (cur_char() != 'f') error(EINVAL); else consume_char();
-					    }
-					/* clang-format on */
-				} else if (cur_char() == 'e') {
-					consume_char();
-					/* clang-format off */
+						if (cur_char() != 'd') error(EINVAL); else consume_char();
+						if (cur_char() != 'i') error(EINVAL); else consume_char();
+						if (cur_char() != 'f') error(EINVAL); else consume_char();
+					}else{
+						if (cur_char() != 'l') error(EINVAL); else consume_char();
+						if (cur_char() != 's') error(EINVAL); else consume_char();
+						if (cur_char() != 'e') error(EINVAL); else consume_char();
+						if (!isspace(cur_char())){
+							if (cur_char() != 'i') error(EINVAL); else consume_char();
+							if (cur_char() != 'f') error(EINVAL); else consume_char();
+						}
+						if (cur_char() != ' ') error(EINVAL); else nom();
+					}
 					/* clang-format on */
 				} else
 					error(EINVAL);
@@ -221,6 +220,7 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 				break;
 			case '/':
 				consume_char();
+				*type = OP_OTHER;
 				if (cur_char() == '*') {
 					*type = COMMENT;
 					while (1) {
