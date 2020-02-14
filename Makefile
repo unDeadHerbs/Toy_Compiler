@@ -1,7 +1,7 @@
 CC          = clang
-WARNINGS    = -Wall -Wextra -Wparentheses -Wno-dangling-else
+WARNINGS    = -pedantic-errors -Weverything -Wno-dangling-else -Werror -fno-builtin
 LIBARYFLAGS = 
-CCFLAGS     = -std=c18 $(WARNINGS) $(LIBARYFLAGS) -g $(SANS)
+CCFLAGS     = -std=c89 $(WARNINGS) $(LIBARYFLAGS) -g $(SANS)
 
 .PHONY:all
 all: format TAGS deps mains
