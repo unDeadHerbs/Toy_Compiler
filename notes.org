@@ -1,0 +1,223 @@
+* 09635 - CPPMC Ramble
+  Sitting on a train for the 2020 spring MtG release. decided to take
+  a ramble.
+
+  I'm not sure how well the linking environment will work for ... that's
+  not it's name. I'm not sure how well the build system will work for
+  projects that aren't being built for the operating system, since all
+  "programs" are just libraries with multiple ... many functions that
+  can be called, there is no primary function to call. and since the
+  UNIX shell environment isn't a part of the language there is no
+  concept of "command line arguments" or the standard IO pipes stdin,
+  stdout, and stderr. The best I'll be able to provide to others for
+  building these programs independently is a cpp object file with
+  linker instructions and following the cpp type system.
+
+  support compiling to the cpp .o files and making cpp header files.
+
+  that's a good plan for later, but make them ~extern c~ for now, makes
+  the type system way easier.
+
+  An easy first goal might be a language that transpiles to C, then
+  I'll have made a language definition and a parser to start work on
+  the other portion.  A second early goal is a running kernel "hello
+  world", the interpreter will probably be next, once that's up a jit
+  can be transitioned into and then a compiler.  All of that would be
+  unoptimized, but that's enough to start building the system and set
+  out the standards.  This is a good path to build under as the
+  language its self is the thing under test and the thing I wish to
+  revise.  And this path lets me get to the language being tested in
+  the target environment fairly quickly
+  
+  Was going though the old logs correcting spelling.  Having the
+  system automatically name variable in scopes and scopes in files
+  technically makes the scripting and terminal interfaces much easier,
+  but isn't a feature that should be used in code?  why not? well then
+  it makes the name of files a dependency. they already were. umm, it
+  can make things harder for new users to read? a little, but if the
+  names are generic enough they should be easy to understand and the
+  programmer should want to change them anyway. they should be
+  technically untypable so that programmers can both know that the
+  name is auto generated (and able to change accidentally) and that
+  they can't be accidentally overridden by a programmer being
+  malicious.
+
+  Also, now that auto generated names are distinct, we can have them
+  be similar to private variables in that they can't be used in
+  "important" code.  By "important" code i mean code that will end up
+  making a state change.  Code can e statically analyzed for if it could
+  make a change in state (like cpp's ~const~ and ~constexpr~), then
+  functions that's don't change state can be allowed to be called with
+  these "private" variables and the result of that can be immediately
+  printed to the user, this permits private variables to be allowed
+  for debugging while simultaneously preventing them from being part
+  of the code.  this can be extended to all private variables.
+
+  #+BEGIN_SRC cpp
+  {
+    variable_one=1;
+    export variable_two=2;
+  } scope_name_here;
+  ,print variable_two;
+  ,print scope_name_here::_variable_one;
+  #+END_SRC
+
+  Here the "private" variable has been renamed with an underscore so
+  that it can be inspected but not stored or used.
+
+  This restriction on usage is not necessarily required for variables
+  declared within the same scope as their usage, but allowing bad
+  habits is bad and unneeded.
+  
+* 09640 - My Shell Feature Desires of cppmc
+  Moved from init todo
+
+  Been a bit, restarting this ramble
+
+  tmux can save session layouts? assuming yes. have tmux save the
+  session layouts as much as it can. The things i need it to keep
+  are: 1. the name of the tab, 2. the name of the Emacs layout that is
+  open, 3. the current active folder for any terminals.
+
+  if I can have eShell as my terminal then that solves one of those
+  problems
+
+  Emacs will need to have the ability to name and save layouts?
+
+  I keep wanting the UNIX philosophy of small programs that are good
+  at their jobs to apply to the library level so that building tools
+  can be easier. similar to how C was developed for the task of
+  building OS tools, i need a language for building CLI tools. this is
+  becoming a ramble on cppmc ... moving this to the logs folder
+
+  this is largely a feature i want to exist within my terminal program,
+  a good linking between a persistent terminal history with notebook
+  features and something akin to tmux for managing the terminal
+  environment and organizing the notebooks.  I would like this to
+  also be linked into my idea of how a network of computers doesn't
+  care for the int-eruptions of the lower (OS/Hardware) layers.  This
+  will partly require the system to be able to migrate between hosts.
+  Each computer that is added to the network will run a server so that
+  it can host a synchronizing copy of the network history so that
+  fragmentation won't effect the user's notebook history, regardless
+  to their location in the network.  This leads to problems with how
+  to synchronize after a fragmentation.  Assuming that a single user is
+  responsible for all changes within the system (as this is a personal
+  terminal) we can hope that conflicts are mostly recoverable directly
+  by the user.  There are two forms of changes that can occur within
+  the terminal.  The user can execute commands that care about the
+  upper system (the terminal) or about the lower layers.
+
+  a command that cares about the lower layers can't need
+  synchronizing, since the computer it belongs to either is or is not
+  in the network, the command simply won't be executed without that
+  computer being accessible.  A command that cares about the upper
+  layers can effect the state in many ways, if the unmerged changes
+  don't effect each other (they are in different notebooks or touch
+  different settings) then they can be simply merged, if they belong
+  to the same notebook a split in the notebook history (vertical line
+  starting at a point in the history) can be inserted to differentiate
+  the two histories and all of the sections can be manually merged by
+  the user (this apples to the changes made to the notebook state by
+  those sections).  This forces some of the design of the notebooks,
+  in a lisp like language ... in a functional language the merging of
+  changes or duplication of states is perfectly manageable; however,
+  in other languages a full duplication of the environment would be
+  needed.  To visualize this more fully, in an org file there can be
+  babel blocks of python. Operating under the assumption that blocks
+  must be run in order and any changes to the above blocks will re-run
+  the lower blocks from that state, there must be a kept state of the
+  interpreter after each block is run and then a fork in the history
+  would just have each block reference the history from the block
+  "above" it.  This does mean that histories are essentially unmergeable
+  after a divergence and the commands must be re-interleaved rather
+  than the two states becoming the same.  I assume that this pure
+  design will be separated from quite a bit later, keeping a complete
+  copy of the interpreter state after each instruction might be too
+  onerous on memory or other resources, identifying which commands are
+  fast and which are better to store would be an early optimization.
+  If the interpreters are written to take a state and a command then
+  return a mutated state and an output, then this would be a trivial
+  system to implement. That is what a program is, although most
+  operating systems don't view programs that way.  If OS level process
+  management can be reimplemented at this layer one can save-state
+  whole programs (long jump does this in cpp).
+
+  For experimentation, can I (in cpp) 1 fork a process, 2 set a
+  longjmp in a signal handler, 3 return to past states of the program
+  using that signal? No, that's not how longjmp works, but the general
+  idea is sound, I'd just have to copy all of the state into a save
+  place for later usage. How hard is it to instrument that OS calls of
+  a program to capture it's memory state and other filesystem calls?
+  Can I build a plan9 like encapsulation for a program that gives it a
+  personal copy of the filesystem that I can make a tree out of?
+  Including it's ram sate?
+* 09643 - CPPMC Pipes
+  This follows along from this morning's audio log.
+
+  Some of the posible operator shapes:
+  |-------------------+-----------------------------------------|
+  | Operator          | Problems                                |
+  |-------------------+-----------------------------------------|
+  | ~>>~ and ~<<~     | Templates                               |
+  | Pipe              | Non Directional                         |
+  | Pipe Greater-Than | I don't like it                         |
+  | ~=>~ and ~<=~     | Could be "Less Than or Equal"           |
+  | ~->~ and ~<-~     | Could be "Greater Than Negative"        |
+  | Less-Than Tilde   | Could be "Greater Than Boolean Inverse" |
+  |-------------------+-----------------------------------------|
+  
+  Well, the ~|>~ wins I guess. This also has the advantage of ~ and -
+  being usable without confusion (since the ~<|~ could require one of
+  them follow/precede it).
+
+  The screen replicator window for plan9 would have a type signature
+  identity of ~<|>{2}-<|>~, which isn't pretty. And the window system
+  would have ~<|>-<|>{#}~, which is fine I guess.  Both of these don't
+  specify the type signature very well, as they are just the signature
+  structure.  The signature would be along the lines of
+  #+BEGIN_SRC cpp
+    Display{
+      < Text;
+      < Sound;
+      > Size;
+    };
+
+    Console{
+      < Display[#];
+      > (Keyboard,Mouse)[#];
+    };
+
+    Window_Monitor{
+      < Console[2];
+      > Console;
+    }
+
+    Window_Manager{
+      < Console;
+      > Console[#];
+    }
+  #+END_SRC
+  Rather informally.  This needn't be formally written in a condensed
+  form since the pipe signature (pun coined here) is detectable by the
+  compiler/interpreter.  Well, it could be needed by a template
+  Concept (in cpp parlance); but, that's fine, operators are check-able
+  at compile time and can be thrown about (as any function that
+  wishes to call them also needs to know about their existence).  This
+  doesn't make it less important to describe the signature though, if
+  they are hoped to be important enough to want to template off of
+  them, making an inline concept is a little verbose and would make
+  these less used.
+
+  Also, some attention should be paid to what left and right piping
+  "means", as we don't want to have users just make a reflector and
+  ignore the construct from then on.  In a functional sense there is
+  an obvious feeling that the control comes from the left and is
+  passed back to the left when a return occurs. 
+
+  That pseudo description of the window manager and monitor fails
+  ... doesn't differentiate between the Display and Console using ~<~
+  and ~>~ to mean direction and the monitor and manager meaning
+  interface side.
+  
+* 09647 - Moved Relivant logs into project folder.
