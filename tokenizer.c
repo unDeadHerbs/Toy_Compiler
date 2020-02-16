@@ -120,6 +120,17 @@ ssize_t gettok_raw(int fd, char buf[33], enum token_type_raw* type) {
 				consume_char();
 				if (cur_char() == ':') consume_char();
 				break;
+			case '+':
+				*type = OP_OTHER_raw;
+				consume_char();
+				if (cur_char() == '+') consume_char();
+				break;
+			case '-':
+				*type = OP_OTHER_raw;
+				consume_char();
+				if (cur_char() == '-') consume_char();
+				break;
+
 			case '"':
 				consume_char();
 				while (cur_char() != '"') {

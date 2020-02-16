@@ -6,10 +6,10 @@
 
 #if 0
 #define DBG(MSG) printf("%s:%d MGS=%s\n", __FILE__, __LINE__, MSG)
+#define DBGi(MSG, NUM) printf("%s:%d\t%s=%d\n", __FILE__, __LINE__, MSG, NUM)
 #else
-#define DBG(MSG) \
-	do {           \
-	} while (0)
+#define DBG(MSG)
+#define DBGi(MSG, NUM)
 #endif
 
 void free_node(struct node* n) {
@@ -48,6 +48,17 @@ static struct token* current_token = NULL;
 		current_token = gettok();                                 \
 	} while (0)
 
+#define rename_use_tok_as(TO_NODE, DESCRIPTION)               \
+	do {                                                        \
+		if (NULL == (TO_NODE = calloc(sizeof(struct node), 1))) { \
+			perror("calloc");                                       \
+			exit(-1);                                               \
+		}                                                         \
+		TO_NODE->tok = current_token;                             \
+		current_token = gettok();                                 \
+		strcpy(TO_NODE->tok->token, DESCRIPTION);                 \
+	} while (0)
+
 #define make_node(NAME, DESCRIPTION)                             \
 	do {                                                           \
 		if (NULL == (NAME = calloc(sizeof(struct node), 1))) {       \
@@ -61,10 +72,11 @@ static struct token* current_token = NULL;
 		strcpy(NAME->tok->token, DESCRIPTION);                       \
 	} while (0)
 
-#define parse_error(DESCRIPTION)                                            \
-	do {                                                                      \
-		fprintf(stderr, "parse_type: %s got \"%s\"\n", DESCRIPTION, cur_tok()); \
-		exit(-1);                                                               \
+#define parse_error(DESCRIPTION)                                      \
+	do {                                                                \
+		fprintf(stderr, "parse: %s got \"%s\" on line %d\n", DESCRIPTION, \
+		        cur_tok(), current_token->line);                          \
+		exit(-1);                                                         \
 	} while (0)
 
 #define append_tok_to(TO_NODE)        \
@@ -80,21 +92,25 @@ static struct token* current_token = NULL;
 		use_tok_as(temp_name);  \
 	} while (0)
 
-#define nom_expect(STR)                                                   \
-	do {                                                                    \
-		struct node* temp_name;                                               \
-		if (0 != strcmp(STR, cur_tok())) parse_error("Expected \"" STR "\""); \
-		use_tok_as(temp_name);                                                \
+#define nom_expect(STR)                                                    \
+	do {                                                                     \
+		struct node* temp_name;                                                \
+		if (0 != strcmp(STR, cur_tok()))                                       \
+			fprintf(stderr, "parse: Expected \"%s\" got \"%s\" on line %d", STR, \
+			        cur_tok(), current_token->line);                             \
+		use_tok_as(temp_name);                                                 \
 	} while (0)
 
 /* -^- -_-_- -^- Divider -^- -_-_- -^- */
+
+struct node* parse_block(void);
 
 struct node* parse_type() {
 	/* [static] (struct|enum) [name] [{things}] [*] */
 	/* [static] (int|void|char) [*] */
 	struct node* type_node;
-	DBG("entered");
-	make_node(type_node, "type");
+	DBG("type");
+	make_node(type_node, "TYPE");
 	if (0 == strcmp("static", cur_tok())) {
 		struct node* stat;
 		use_tok_as(stat);
@@ -113,8 +129,7 @@ struct node* parse_type() {
 			found++;
 		}
 		if (0 == strcmp("{", cur_tok())) {
-			/* TODO content */
-			found++;
+			append_child(type_node, parse_block());
 		}
 		while (0 == strcmp("*", cur_tok())) append_tok_to(type_node);
 		if (0 == found) parse_error("expected a name or a description");
@@ -130,26 +145,129 @@ struct node* parse_type() {
 		parse_error("unkown type");
 }
 
-struct node* parse_expression() {
-	/* (ident|op_other)* */
-	/* TODO: this is just a stub so it builds. */
-	struct node* expression;
-	DBG("entered");
-	make_node(expression, "EXPRESSION");
-	while (cur_type() == IDENT ||
-	       (cur_type() == OP_OTHER && 0 != strcmp(")", cur_tok())) ||
-	       cur_type() == CHAR || cur_type() == STRING) {
-		struct node* v;
-		use_tok_as(v);
-		append_child(expression, v);
+enum operator_associativity { ltr, rtl, unary_l, unary_r };
+static struct operator{
+	enum operator_associativity asoc;
+	char symbol[4];
+	char symbol2[4];
+}
+operators_in_prescience[] = {
+    {ltr, ",", ""},      {rtl, "|=", ""},     {rtl, "^=", ""},
+    {rtl, "&=", ""},     {rtl, ">>=", ""},    {rtl, "<<=", ""},
+    {rtl, "%=", ""},     {rtl, "/=", ""},     {rtl, "*=", ""},
+    {rtl, "-=", ""},     {rtl, "+=", ""},     {ltr, "=", ""},
+    {ltr, "||", ""},     {ltr, "&&", ""},     {ltr, "|", ""},
+    {ltr, "^", ""},      {ltr, "&", ""},      {ltr, "!=", ""},
+    {ltr, "==", ""},     {ltr, ">=", ""},     {ltr, ">", ""},
+    {ltr, "<=", ""},     {ltr, "<", ""},      {ltr, "<=>", ""},
+    {ltr, ">>", ""},     {ltr, "<<", ""},     {ltr, "-", ""},
+    {ltr, "+", ""},      {ltr, "%", ""},      {ltr, "/", ""},
+    {ltr, "*", ""},      {unary_l, "&", ""},  {unary_l, "*", ""},
+    {unary_l, "~", ""},  {unary_l, "!", ""},  {unary_l, "--", ""},
+    {unary_l, "++", ""}, {unary_r, "[", "]"}, {unary_r, "(", ")"},
+    {unary_r, "--", ""}, {unary_r, "++", ""}, {ltr, "::", ""},
+    {unary_l, "::", ""}};
+/* Some C operators are excluded, see notes file.*/
+
+struct node* parse_expression(void);
+
+struct node* parse_ident() {
+	struct node* name;
+	DBG("ident");
+	if (cur_type() == IDENT) {
+		use_tok_as(name);
+		return name;
 	}
-	return expression;
+	parse_error("Expected: Parenthetical, IDENT, or NUMBER");
+}
+
+struct node* parse_value() {
+	struct node* value;
+	DBG("value");
+	/* '(' expression ')' */
+	if (0 == strcmp("(", cur_tok())) {
+		DBG("Paren");
+		use_tok_as(value);
+		append_child(value, parse_expression());
+		nom_expect(")");
+		return value;
+	}
+	/* IDENT or literal (NUMBER, CHAR, or STRING) */
+	if (cur_type() == IDENT || cur_type() == NUMBER || cur_type() == CHAR ||
+	    cur_type() == STRING) {
+		use_tok_as(value);
+		return value;
+	}
+	parse_error("Expected: Parenthetical, IDENT, or NUMBER");
+}
+
+struct node* parse_unary(int);
+struct node* parse_binary(int);
+struct node* parse_op(int op) {
+	if (op == sizeof(operators_in_prescience) / sizeof(struct operator))
+		return parse_value();
+	if (operators_in_prescience[op].asoc == ltr ||
+	    operators_in_prescience[op].asoc == rtl)
+		return parse_binary(op);
+	/* if(operators_in_prescience[op].asoc==unary_l ||
+	  operators_in_prescience[op].asoc==unary_r) */
+	return parse_unary(op);
+}
+
+struct node* parse_binary(int op) {
+	struct node* op_t = NULL;
+	struct node* value;
+	DBG("OP_Binary");
+	DBGi("op", op);
+	value = parse_op(op + 1);
+	while (0 == strcmp(operators_in_prescience[op].symbol, cur_tok())) {
+		use_tok_as(op_t);
+		append_child(op_t, value);
+		value = parse_op(op + 1);
+		if (0 != strcmp("", operators_in_prescience[op].symbol2)) {
+			append_child(op_t, value);
+			nom_expect(operators_in_prescience[op].symbol2);
+			return op_t;
+		}
+	}
+	if (NULL == op_t) return value;
+	append_child(op_t, value);
+	return op_t;
+}
+
+struct node* parse_unary(int op) {
+	struct node* op_t = NULL;
+	struct node* value;
+	DBG("OP_Unary");
+	DBGi("op", op);
+	if (operators_in_prescience[op].asoc == unary_l)
+		if (0 == strcmp(operators_in_prescience[op].symbol, cur_tok()))
+			use_tok_as(op_t);
+	value = parse_op(op + 1);
+	if (operators_in_prescience[op].asoc == unary_r)
+		if (0 == strcmp(operators_in_prescience[op].symbol, cur_tok())) {
+			use_tok_as(op_t);
+			if (0 != strcmp("", operators_in_prescience[op].symbol2)) {
+				DBG("LHS Grouping");
+				append_child(op_t, value);
+				append_child(op_t, parse_expression());
+				nom_expect(operators_in_prescience[op].symbol2);
+				return op_t;
+			}
+		}
+	if (NULL == op_t) return value;
+	append_child(op_t, value);
+	return op_t;
+}
+
+struct node* parse_expression() {
+	return parse_op(0);
 }
 
 struct node* parse_condition() {
 	/* expression [ relation expression ] */
 	struct node* cond;
-	DBG("entered");
+	DBG("cond");
 	make_node(cond, "CONDITION");
 	append_child(cond, parse_expression());
 	if (cur_type() == RELATION) {
@@ -161,17 +279,18 @@ struct node* parse_condition() {
 	return cond;
 }
 
-struct node* parse_block(void);
-
 struct node* parse_statement() {
 	struct node* statement;
-	DBG("entered");
+	DBG("statement");
 	/* ; */
 	if (0 == strcmp(";", cur_tok())) {
 		use_tok_as(statement);
 		return statement;
 	}
 	/* Controll */
+	if (0 == strcmp("{", cur_tok())) {
+		return parse_block();
+	}
 	if (0 == strcmp("while", cur_tok())) {
 		struct node* control;
 		use_tok_as(statement);
@@ -179,7 +298,7 @@ struct node* parse_statement() {
 		/* eat '(' cond ')' block */
 		if (0 != strcmp("(", cur_tok()))
 			parse_error("Expected condition after while");
-		use_tok_as(control);
+		rename_use_tok_as(control, "CONTROL");
 		append_child(control, parse_condition());
 		nom_expect(")");
 		append_child(statement, control);
@@ -187,19 +306,28 @@ struct node* parse_statement() {
 		return statement;
 	}
 	/* Declaration */
-	/* check if in type table */
-
-	/* Function call or Asignment */
-	/* check if known ident */
-	use_tok_as(statement);
-	return statement;
-	/* return NULL; */
+	if (0 == strcmp("struct", cur_tok())) {
+		struct node* decl;
+		struct node* type = parse_type();
+		struct node* ident = parse_ident();
+		make_node(decl, "DECLARATION");
+		append_child(decl, type);
+		append_child(decl, ident);
+		if (0 == strcmp("=", cur_tok())) {
+			struct node* assignment;
+			use_tok_as(assignment);
+			append_child(assignment, parse_expression());
+			append_child(decl, assignment);
+		}
+		return decl;
+	}
+	return parse_expression();
 }
 
 struct node* parse_block() {
 	/* statement or { statement } */
 	struct node* block;
-	DBG("entered");
+	DBG("block");
 	if (0 == strcmp("{", cur_tok())) {
 		use_tok_as(block);
 		while (0 != strcmp("}", cur_tok())) append_child(block, parse_statement());
@@ -210,19 +338,15 @@ struct node* parse_block() {
 	}
 }
 
-struct node* parse_function() {
-	/* (args) block */
-	/* (args) ; */
-	struct node* func;
+struct node* parse_parameters() {
+	/* (args) */
 	struct node* params;
-	DBG("entered");
-	make_node(func, "Function");
-	make_node(params, "Parameters");
-	append_child(func, params);
+	DBG("params");
+	make_node(params, "PARAMETERS");
 	nom_expect("(");
 	while (0 != strcmp(")", cur_tok())) {
 		struct node* param;
-		make_node(param, "Parameter");
+		make_node(param, "PARAMETER");
 		append_child(param, parse_type());
 		if (cur_type() == IDENT) append_tok_to(param);
 		append_child(params, param);
@@ -230,15 +354,11 @@ struct node* parse_function() {
 			nom_expect(","); /* This allows for a traling comma? */
 	}
 	nom_expect(")");
-	if (0 == strcmp("{", cur_tok()))
-		append_child(func, parse_block());
-	else
-		nom_expect(";");
-	return func;
+	return params;
 }
 
 struct node* parse_top_usage(void) {
-	DBG("entered");
+	DBG("top_usage");
 	if (0 == strcmp(";", cur_tok())) {
 		struct node* semi;
 		use_tok_as(semi);
@@ -256,8 +376,12 @@ struct node* parse_top_usage(void) {
 			/* no initialization */
 			return name;
 		} else if (0 == strcmp("(", cur_tok())) {
-			append_child(name, parse_function());
-			return name;
+			struct node* func;
+			make_node(func, "FUNCTION");
+			append_child(func, name);
+			append_child(func, parse_parameters());
+			append_child(func, parse_block());
+			return func;
 		}
 		parse_error("Expected value, function, or end of statement");
 	}
@@ -265,7 +389,7 @@ struct node* parse_top_usage(void) {
 
 struct node* parse_top_statement(void) {
 	struct node* root;
-	DBG("entered");
+	DBG("statement");
 	make_node(root, "top_level_statement");
 	append_child(root, parse_type());
 	append_child(root, parse_top_usage());
@@ -282,7 +406,7 @@ struct node* parse_top_statement(void) {
 }
 
 struct node* parse_root(void) {
-	DBG("entered");
+	DBG("root");
 	switch (cur_type()) {
 		case EOF_TOKEN:
 			return NULL;
@@ -304,7 +428,6 @@ struct node* parse_root(void) {
 void start_parser(char const* const path) { start_tokenizer(path); }
 
 struct node* parse_next(void) {
-	DBG("entered");
 	if (current_token == NULL) nom_tok();
 	return parse_root();
 }
