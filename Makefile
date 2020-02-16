@@ -7,6 +7,10 @@ CCFLAGS     = -std=c89 $(WARNINGS) $(LIBARYFLAGS) -g $(SANS)
 .PHONY:all
 all: format TAGS main.bin
 
+seg: clean msan
+msan:
+	make --no-print-directory all SANS=-fsanitize=address
+
 # generate the etags file
 TAGS:
 	@rm -f TAGS
@@ -14,10 +18,10 @@ TAGS:
 	@echo "Generated Tags"
 
 # use the etags file to find all excicutables
-main.bin: main.o parser.o tokenizer.o
+main.bin: main.o tokenizer.o macro_expander.o # parser.o
 	$(CC) $(CCFLAGS) $(LIBARYFLAGS) $^ -o $@
 
-%.o: %.c %.h
+%.o: %.c
 	$(CC) $(CCFLAGS) $(LIBARYFLAGS) -c $< -o $@
 
 # emacs flycheck-mode
@@ -32,7 +36,7 @@ clean:
 
 .PHONY: format
 format:
-	@git ls-files|egrep '.*[.](c|h)$$'|xargs clang-format -i
+	@find|egrep '[.](c|h)$$'|xargs clang-format -i
 	@echo "reformatted code"
 
 

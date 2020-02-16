@@ -1,3 +1,12 @@
+#define f(x) \
+(x+x)
+
+f(cats);
+
+#undef f
+
+f(cats);
+
 void print(char*s){
 	while(*s!='\0'){
 		puts(*s);

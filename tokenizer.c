@@ -5,10 +5,10 @@
 
 static char cur_char_holder = '\0';
 
-ssize_t gettok(int fd, char buf[33], enum token_type* type) {
+ssize_t gettok_raw(int fd, char buf[33], enum token_type_raw* type) {
 	char* ptr = buf;
 	*ptr = '\0';
-	*type = ERROR;
+	*type = ERROR_raw;
 
 #define error(ERNO) \
 	do {              \
@@ -38,14 +38,14 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 	/* rm leading whitespace */
 	while (isspace(cur_char()) && cur_char() != '\n') nom();
 	if (cur_char() == '\n') {
-		*type = NEWLINE;
+		*type = NEWLINE_raw;
 		consume_char();
 		goto good;
 	}
 
 	/* check that there is an input */
 	if (cur_char() == '\0') {
-		*type = EOF_TOKEN;
+		*type = EOF_TOKEN_raw;
 		goto good;
 	}
 
@@ -55,7 +55,7 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 			consume_char();
 			do_read();
 		} while (isalnum(cur_char()) || cur_char() == '_');
-		*type = IDENT;
+		*type = IDENT_raw;
 		goto check;
 	}
 
@@ -92,7 +92,7 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 					error(EINVAL);
 			}
 		}
-		*type = NUMBER;
+		*type = NUMBER_raw;
 		goto good;
 	}
 
@@ -103,20 +103,20 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 			case '<':
 			case '=':
 			case '>':
-				*type = RELATION;
+				*type = RELATION_raw;
 				consume_char();
 				if (cur_char() == '=') consume_char();
 				break;
 			case '!':
-				*type = ARITH_UNARY;
+				*type = ARITH_UNARY_raw;
 				consume_char();
 				if (cur_char() == '=') {
-					*type = RELATION;
+					*type = RELATION_raw;
 					consume_char();
 				}
 				break;
 			case ':':
-				*type = OP_OTHER;
+				*type = OP_OTHER_raw;
 				consume_char();
 				if (cur_char() == ':') consume_char();
 				break;
@@ -127,7 +127,7 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 					consume_char();
 				}
 				consume_char();
-				*type = STRING;
+				*type = STRING_raw;
 				break;
 			case '\'':
 				consume_char();
@@ -141,7 +141,7 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 				}
 				if (cur_char() != '\'') error(EINVAL);
 				consume_char();
-				*type = CHAR;
+				*type = CHAR_raw;
 				break;
 			case '#':
 				consume_char();
@@ -216,13 +216,13 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 					/* clang-format on */
 				} else
 					error(EINVAL);
-				*type = PREPROC;
+				*type = PREPROC_raw;
 				break;
 			case '/':
 				consume_char();
-				*type = OP_OTHER;
+				*type = OP_OTHER_raw;
 				if (cur_char() == '*') {
-					*type = COMMENT;
+					*type = COMMENT_raw;
 					while (1) {
 						if (cur_char() == '*') {
 							consume_char();
@@ -244,8 +244,12 @@ ssize_t gettok(int fd, char buf[33], enum token_type* type) {
 					}
 				}
 				break;
+			case '\\':
+				consume_char();
+				if (cur_char() == '\n' || cur_char() == '\r') consume_char();
+				return gettok_raw(fd, buf, type);
 			default:
-				*type = OP_OTHER;
+				*type = OP_OTHER_raw;
 				consume_char();
 				break;
 		}

@@ -240,22 +240,6 @@ read_token:
 			nom_tok();
 			goto read_token;
 
-		case PREPROC:
-			if (0 == strncmp("#include ", cur_tok(), 9)) {
-				use_tok_as(root);
-				return root;
-			}
-			if (0 == strcmp("#if", cur_tok()) || 0 == strcmp("#ifdef", cur_tok()) ||
-			    0 == strcmp("#ifndef", cur_tok()) ||
-			    0 == strcmp("#define", cur_tok())) {
-				use_tok_as(root);
-				while (cur_type() != NEWLINE) append_tok_to(root);
-				return root;
-			}
-			/* TODO: the rest of them */
-			use_tok_as(root);
-			return root;
-
 		case EOF_TOKEN:
 			return NULL;
 
