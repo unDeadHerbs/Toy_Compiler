@@ -1,14 +1,16 @@
 #ifndef PARSER_H__
 #define PARSER_H__
+#include "macro_expander.h"
 
 struct node {
-	char token[33];
+	struct token* tok;
 	struct node* sibling;
 	struct node* child;
 };
 
 void free_node(struct node*);
 
-struct node* parse_next(int fd);
+void start_parser(char const* const path);
+struct node* parse_next(void);
 
 #endif

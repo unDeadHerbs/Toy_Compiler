@@ -18,7 +18,7 @@ TAGS:
 	@echo "Generated Tags"
 
 # use the etags file to find all excicutables
-main.bin: main.o tokenizer.o macro_expander.o # parser.o
+main.bin: main.o tokenizer.o macro_expander.o parser.o
 	$(CC) $(CCFLAGS) $(LIBARYFLAGS) $^ -o $@
 
 %.o: %.c
