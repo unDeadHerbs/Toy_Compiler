@@ -20,16 +20,19 @@ static struct def_dict {
 	struct def_dict* prior;
 } top_def_dict, *current_def_dict = &top_def_dict;
 
-#define add_def_to_dict_bot(PTR_TOK)                                     \
-	do {                                                                   \
-		if (NULL ==                                                          \
-		    (current_def_dict->next = calloc(sizeof(struct def_dict), 1))) { \
-			perror("calloc");                                                  \
-			exit(-1);                                                          \
-		}                                                                    \
-		current_def_dict->next->prior = current_def_dict;                    \
-		current_def_dict = current_def_dict->next;                           \
-		current_def_dict->name = PTR_TOK;                                    \
+#define add_def_to_dict_bot(PTR_TOK)                                       \
+	do {                                                                     \
+		struct token* force_eval = PTR_TOK;                                    \
+		if (NULL != current_def_dict->name) {                                  \
+			if (NULL ==                                                          \
+			    (current_def_dict->next = calloc(sizeof(struct def_dict), 1))) { \
+				perror("calloc");                                                  \
+				exit(-1);                                                          \
+			}                                                                    \
+			current_def_dict->next->prior = current_def_dict;                    \
+			current_def_dict = current_def_dict->next;                           \
+		}                                                                      \
+		current_def_dict->name = force_eval;                                   \
 	} while (0)
 #define add_token_to_last_def(PTR_TOK)                           \
 	do {                                                           \
@@ -119,15 +122,25 @@ void start_tokenizer(char const* const path) { add_file_to_stack(path); }
 struct token* gettok(void) {
 	static int reading_define = 0;
 	struct token* ret;
+	static struct token* storage = NULL;
+	/* Storage is only non-NULL if the last token was a function like
+	   macro and it didn't have a parameter list. */
 	enum token_type_raw type;
-	if (NULL == (ret = calloc(sizeof(struct token), 1))) {
-		perror("calloc");
-		exit(-1);
+	if (NULL == storage) {
+		if (NULL == (ret = calloc(sizeof(struct token), 1))) {
+			perror("calloc");
+			exit(-1);
+		}
+		gettok_raw(current_file->fd, ret->token, &type);
+		ret->path = current_file->path;
+		ret->line = current_file->line;
+	} else {
+		printf("found storage\n");
+		ret = storage;
+		storage = NULL;
+		return ret;
 	}
 	if (current_file == NULL) return ret;
-	gettok_raw(current_file->fd, ret->token, &type);
-	ret->path = current_file->path;
-	ret->line = current_file->line;
 	switch (type) {
 		case ERROR_raw:
 			perror("gettok_raw");
@@ -142,10 +155,28 @@ struct token* gettok(void) {
 				ret->type = EOF_TOKEN;
 				return ret;
 			}
-		case IDENT_raw:
-			/* TODO: Check if it's a macro. */
+		case IDENT_raw: {
+			struct def_dict* def_check = current_def_dict;
 			ret->type = IDENT;
-			break;
+			while (NULL != def_check) {
+				if (0 == strcmp(def_check->name->token, ret->token)) break;
+				def_check = def_check->prior;
+			}
+			if (NULL != def_check) {
+				if (def_check->has_params) {
+					storage = gettok();
+					if (0 != strcmp("(", storage->token)) break;
+					free(storage);
+					storage = NULL;
+					/* Read Parameters into defs */
+				}
+				/* Put onto Macro Stack */
+				free(ret);
+				return gettok();
+			} else {
+				break;
+			}
+		}
 		case NUMBER_raw:
 			ret->type = NUMBER;
 			break;
@@ -225,8 +256,14 @@ struct token* gettok(void) {
 				return gettok();
 			}
 			if (0 == strcmp("#undef", ret->token)) {
-				struct token* to_rm = gettok();
-				/* get the name to remove */
+				struct token* to_rm;
+				if (NULL == (to_rm = calloc(sizeof(struct token), 1))) {
+					perror("calloc");
+					exit(-1);
+				}
+				gettok_raw(current_file->fd, to_rm->token, &type);
+				/* Can't use gettok as it evaluates macros*/
+				/* TODO: Remove it from the dict. */
 				free(to_rm);
 				return gettok();
 			}
