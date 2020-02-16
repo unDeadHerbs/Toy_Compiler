@@ -20,7 +20,7 @@ static struct def_dict {
 	struct def_dict* prior;
 } top_def_dict, *current_def_dict = &top_def_dict;
 
-#define add_def_to_dict_bot(PTR_TOK)                                       \
+#define add_def_to_dict_bot_named(PTR_TOK, DICT_BOT)                       \
 	do {                                                                     \
 		struct token* force_eval = PTR_TOK;                                    \
 		if (force_eval->type != IDENT) {                                       \
@@ -29,20 +29,21 @@ static struct def_dict {
 			        force_eval->token, force_eval->line);                        \
 			exit(-1);                                                            \
 		}                                                                      \
-		if (NULL != current_def_dict->name) {                                  \
-			if (NULL ==                                                          \
-			    (current_def_dict->next = calloc(sizeof(struct def_dict), 1))) { \
+		if (NULL != DICT_BOT->name) {                                          \
+			if (NULL == (DICT_BOT->next = calloc(sizeof(struct def_dict), 1))) { \
 				perror("calloc");                                                  \
 				exit(-1);                                                          \
 			}                                                                    \
-			current_def_dict->next->prior = current_def_dict;                    \
-			current_def_dict = current_def_dict->next;                           \
+			DICT_BOT->next->prior = DICT_BOT;                                    \
+			DICT_BOT = DICT_BOT->next;                                           \
 		}                                                                      \
-		current_def_dict->name = force_eval;                                   \
+		DICT_BOT->name = force_eval;                                           \
 	} while (0)
-#define add_token_to_last_def(PTR_TOK)                            \
+#define add_def_to_dict_bot(PTR_TOK) \
+	add_def_to_dict_bot_named(PTR_TOK, current_def_dict)
+#define add_token_to_last_def_named(PTR_TOK, DICT_CUR)            \
 	do {                                                            \
-		struct token_dict** last = &current_def_dict->value;          \
+		struct token_dict** last = &DICT_CUR->value;                  \
 		while (*last != NULL) last = &(*last)->next;                  \
 		if (NULL == (*last = calloc(sizeof(struct token_dict), 1))) { \
 			perror("calloc");                                           \
@@ -50,15 +51,17 @@ static struct def_dict {
 		}                                                             \
 		(*last)->tok = PTR_TOK;                                       \
 	} while (0)
-#define add_token_to_last_def_params(PTR_TOK)                    \
-	do {                                                           \
-		struct token_dict* last = current_def_dict->params;          \
-		while (last != NULL) last = last->next;                      \
-		if (NULL == (last = calloc(sizeof(struct token_dict), 1))) { \
-			perror("calloc");                                          \
-			exit(-1);                                                  \
-		}                                                            \
-		last->tok = PTR_TOK;                                         \
+#define add_token_to_last_def(PTR_TOK) \
+	add_token_to_last_def_named(PTR_TOK, current_def_dict)
+#define add_token_to_last_def_params(PTR_TOK)                     \
+	do {                                                            \
+		struct token_dict** last = &current_def_dict->params;         \
+		while (*last != NULL) last = &(*last)->next;                  \
+		if (NULL == (*last = calloc(sizeof(struct token_dict), 1))) { \
+			perror("calloc");                                           \
+			exit(-1);                                                   \
+		}                                                             \
+		(*last)->tok = PTR_TOK;                                       \
 	} while (0)
 #define add_simple_def_STR(NAME, VALUE)                            \
 	do {                                                             \
@@ -239,12 +242,60 @@ struct token* gettok(void) {
 								exit(-1);
 							}
 							new_macro->prior = current_macro;
-							current_macro = new_macro;
 							if (NULL != new_macro->prior)
 								new_macro->parameters_last = new_macro->prior->parameters_last;
 							else
 								new_macro->parameters_last = current_def_dict;
-							/* TODO: Read Parameters into defs, updating last. */
+							if (NULL != def_check->params) {
+								struct token_dict* param_name = def_check->params;
+								if (NULL == (new_macro->parameters =
+								                 calloc(sizeof(struct def_dict), 1))) {
+									perror("calloc");
+									exit(-1);
+								}
+								if (NULL != param_name) {
+									new_macro->parameters_last = new_macro->parameters;
+									while (1) {
+										struct token* param_val = gettok();
+										add_def_to_dict_bot_named(param_name->tok,
+										                          new_macro->parameters_last);
+
+										/* TODO: This dosen't support f((1,2),3) */
+										while (0 != strcmp(",", param_val->token) &&
+										       0 != strcmp(")", param_val->token)) {
+											add_token_to_last_def_named(param_val,
+											                            new_macro->parameters);
+											param_val = gettok();
+										}
+										param_name = param_name->next;
+										if (NULL != param_name) {
+											if (0 != strcmp(",", param_val->token)) {
+												errno = EINVAL;
+												fprintf(stderr, "Expected parameter to macro.\n");
+												exit(-1);
+											}
+											free(param_name);
+										} else {
+											if (0 != strcmp(")", param_val->token)) {
+												errno = EINVAL;
+												fprintf(stderr, "Expected end to macro.\n");
+												exit(-1);
+											}
+											free(param_name);
+											break;
+										}
+									}
+								}
+							} else {
+								struct token* close_paren = gettok();
+								if (0 != strcmp(")", close_paren->token)) {
+									errno = EINVAL;
+									fprintf(stderr, "Expected end to macro.\n");
+									exit(-1);
+								}
+								free(close_paren);
+							}
+							current_macro = new_macro;
 							new_macro->to_use = def_check->value;
 						}
 					} else {
@@ -286,6 +337,7 @@ struct token* gettok(void) {
 				}
 			}
 			if (0 == strcmp("#define", ret->token)) {
+				int params = 0;
 				struct token* tmp;
 				if (reading_define) {
 					errno = EINVAL;
@@ -301,6 +353,11 @@ struct token* gettok(void) {
 					tmp = gettok();
 					while (1) {
 						if (tmp->type != IDENT) {
+							if (params == 0 && 0 == strcmp(")", tmp->token)) {
+								free(tmp);
+								tmp = gettok();
+								break;
+							}
 							errno = EINVAL;
 							fprintf(stderr, "Expected IDENT, got \"%s\"", tmp->token);
 							perror("macro_expander");
@@ -350,7 +407,6 @@ struct token* gettok(void) {
 				reading_define = 0;
 				break;
 			}
-
 		case COMMENT_raw:
 			free(ret);
 			return gettok();

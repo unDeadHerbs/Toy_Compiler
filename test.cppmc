@@ -7,6 +7,10 @@ void basic(void){
 
 f(cats __LINE__);
 
+#define g() hat
+
+g()
+
 #undef f
 
 f(cats __FILE__);
