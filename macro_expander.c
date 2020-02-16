@@ -12,7 +12,7 @@ struct token_dict {
 };
 
 static struct def_dict {
-	struct token* name;
+	struct token const* name;
 	char has_params;
 	struct token_dict* params;
 	struct token_dict* value;
@@ -23,6 +23,12 @@ static struct def_dict {
 #define add_def_to_dict_bot(PTR_TOK)                                       \
 	do {                                                                     \
 		struct token* force_eval = PTR_TOK;                                    \
+		if (force_eval->type != IDENT) {                                       \
+			errno = EINVAL;                                                      \
+			fprintf(stderr, "#define expected IDENT, got \"%s\"\nLine:%d\n",     \
+			        force_eval->token, force_eval->line);                        \
+			exit(-1);                                                            \
+		}                                                                      \
 		if (NULL != current_def_dict->name) {                                  \
 			if (NULL ==                                                          \
 			    (current_def_dict->next = calloc(sizeof(struct def_dict), 1))) { \
@@ -34,15 +40,15 @@ static struct def_dict {
 		}                                                                      \
 		current_def_dict->name = force_eval;                                   \
 	} while (0)
-#define add_token_to_last_def(PTR_TOK)                           \
-	do {                                                           \
-		struct token_dict* last = current_def_dict->value;           \
-		while (last != NULL) last = last->next;                      \
-		if (NULL == (last = calloc(sizeof(struct token_dict), 1))) { \
-			perror("calloc");                                          \
-			exit(-1);                                                  \
-		}                                                            \
-		last->tok = PTR_TOK;                                         \
+#define add_token_to_last_def(PTR_TOK)                            \
+	do {                                                            \
+		struct token_dict** last = &current_def_dict->value;          \
+		while (*last != NULL) last = &(*last)->next;                  \
+		if (NULL == (*last = calloc(sizeof(struct token_dict), 1))) { \
+			perror("calloc");                                           \
+			exit(-1);                                                   \
+		}                                                             \
+		(*last)->tok = PTR_TOK;                                       \
 	} while (0)
 #define add_token_to_last_def_params(PTR_TOK)                    \
 	do {                                                           \
@@ -54,7 +60,6 @@ static struct def_dict {
 		}                                                            \
 		last->tok = PTR_TOK;                                         \
 	} while (0)
-
 #define add_simple_def_STR(NAME, VALUE)                            \
 	do {                                                             \
 		struct token *macro_name, *macro_value;                        \
@@ -83,6 +88,7 @@ static struct file_position {
 	struct file_position* child;
 	struct file_position* parrent;
 } top_file, *current_file = &top_file;
+
 #define add_file_to_stack(PATH)                                                \
 	do {                                                                         \
 		char* path_buf;                                                            \
@@ -107,7 +113,6 @@ static struct file_position {
 		}                                                                          \
 		add_simple_def_STR("__FILE__", path_buf);                                  \
 	} while (0)
-
 /* NOTE: Intentional leak of ~char* path~ so it stays in memory for
    tokens. */
 #define pop_file_stack()                  \
@@ -119,64 +124,51 @@ static struct file_position {
 
 void start_tokenizer(char const* const path) { add_file_to_stack(path); }
 
+static struct macro_val_stack {
+	struct macro_val_stack* prior;
+	struct def_dict* parameters;
+	struct def_dict* parameters_last;
+	struct token_dict* to_use;
+} * current_macro;
+
 struct token* gettok(void) {
 	static int reading_define = 0;
 	struct token* ret;
-	static struct token* storage = NULL;
+	static struct token_dict* storage = NULL;
 	/* Storage is only non-NULL if the last token was a function like
 	   macro and it didn't have a parameter list. */
 	enum token_type_raw type;
-	if (NULL == storage) {
-		if (NULL == (ret = calloc(sizeof(struct token), 1))) {
-			perror("calloc");
-			exit(-1);
-		}
+
+	if (NULL != storage) {
+		struct token_dict* t;
+		ret = storage->tok;
+		t = storage;
+		storage = storage->next;
+		free(t);
+		return ret;
+	}
+
+	if (NULL == (ret = calloc(sizeof(struct token), 1))) {
+		perror("calloc");
+		exit(-1);
+	}
+	if (NULL != current_macro) {
+		*ret = *(current_macro->to_use->tok);
+		current_macro->to_use = current_macro->to_use->next;
+		if (NULL == current_macro->to_use) current_macro = current_macro->prior;
+		goto macro_eval;
+	} else {
 		gettok_raw(current_file->fd, ret->token, &type);
 		ret->path = current_file->path;
 		ret->line = current_file->line;
-	} else {
-		printf("found storage\n");
-		ret = storage;
-		storage = NULL;
-		return ret;
+		if (current_file == NULL) return ret;
 	}
-	if (current_file == NULL) return ret;
+
 	switch (type) {
 		case ERROR_raw:
 			perror("gettok_raw");
 			exit(-1);
 
-		case EOF_TOKEN_raw:
-			if (current_file != &top_file) {
-				pop_file_stack();
-				free(ret);
-				return gettok();
-			} else {
-				ret->type = EOF_TOKEN;
-				return ret;
-			}
-		case IDENT_raw: {
-			struct def_dict* def_check = current_def_dict;
-			ret->type = IDENT;
-			while (NULL != def_check) {
-				if (0 == strcmp(def_check->name->token, ret->token)) break;
-				def_check = def_check->prior;
-			}
-			if (NULL != def_check) {
-				if (def_check->has_params) {
-					storage = gettok();
-					if (0 != strcmp("(", storage->token)) break;
-					free(storage);
-					storage = NULL;
-					/* Read Parameters into defs */
-				}
-				/* Put onto Macro Stack */
-				free(ret);
-				return gettok();
-			} else {
-				break;
-			}
-		}
 		case NUMBER_raw:
 			ret->type = NUMBER;
 			break;
@@ -196,16 +188,95 @@ struct token* gettok(void) {
 			ret->type = CHAR;
 			break;
 
+		case EOF_TOKEN_raw:
+			if (current_file != &top_file) {
+				pop_file_stack();
+				free(ret);
+				return gettok();
+			} else {
+				ret->type = EOF_TOKEN;
+				return ret;
+			}
+
+		case IDENT_raw:
+		macro_eval:
+			if (0 == (strcmp("__LINE__", ret->token))) {
+				/* Much easier to not make this a normal macro. */
+				sprintf(ret->token, "%d", current_file->line);
+				ret->type = NUMBER;
+				break;
+			} else {
+				struct def_dict* def_check;
+				if (NULL != current_macro)
+					def_check = current_macro->parameters_last;
+				else
+					def_check = current_def_dict;
+				ret->type = IDENT;
+				while (NULL != def_check) {
+					if (0 == strcmp(def_check->name->token, ret->token)) break;
+					def_check = def_check->prior;
+				}
+				if (NULL != def_check) {
+					if (def_check->has_params) {
+						struct token_dict* store;
+						if (NULL == (store = calloc(sizeof(struct token_dict), 1))) {
+							perror("calloc");
+							exit(-1);
+						}
+						store->tok = gettok();
+						store->next = storage;
+						storage = store;
+						if (0 != strcmp("(", store->tok->token)) break;
+						/* If was '(' then storage must have been empty, so we
+						   don't need to pop. */
+						free(storage);
+						storage = NULL;
+						{
+							struct macro_val_stack* new_macro;
+							if (NULL ==
+							    (new_macro = calloc(sizeof(struct macro_val_stack), 1))) {
+								perror("calloc");
+								exit(-1);
+							}
+							new_macro->prior = current_macro;
+							current_macro = new_macro;
+							if (NULL != new_macro->prior)
+								new_macro->parameters_last = new_macro->prior->parameters_last;
+							else
+								new_macro->parameters_last = current_def_dict;
+							/* TODO: Read Parameters into defs, updating last. */
+							new_macro->to_use = def_check->value;
+						}
+					} else {
+						struct macro_val_stack* new_macro;
+						if (NULL ==
+						    (new_macro = calloc(sizeof(struct macro_val_stack), 1))) {
+							perror("calloc");
+							exit(-1);
+						}
+						new_macro->prior = current_macro;
+						current_macro = new_macro;
+						if (NULL != new_macro->prior)
+							new_macro->parameters_last = new_macro->prior->parameters_last;
+						else
+							new_macro->parameters_last = current_def_dict;
+						new_macro->to_use = def_check->value;
+					}
+					free(ret);
+					return gettok();
+				} else {
+					break;
+				}
+			}
+
 		case PREPROC_raw:
-			/* check the type */
 			if (0 == strncmp("#include ", ret->token, 9)) {
-				/* check if next char is " or < */
 				char* f = ret->token;
 				while (*++f != ' ')
 					;
 				while (*++f == ' ')
 					;
-				if (*f == '"') {
+				if (*f == '"') { /* Not local (library <>) not implimented. */
 					char* e = f;
 					while (*++e != '"')
 						;
@@ -221,7 +292,7 @@ struct token* gettok(void) {
 					perror("macro_expander");
 					exit(-1);
 				}
-				add_def_to_dict_bot(gettok()); /* first is name */
+				add_def_to_dict_bot(gettok()); /* First is name */
 				reading_define = 1;
 				tmp = gettok();
 				if (0 == strcmp("(", tmp->token)) {
@@ -241,6 +312,8 @@ struct token* gettok(void) {
 							free(tmp);
 							tmp = gettok();
 						} else if (0 == strcmp(")", tmp->token)) {
+							free(tmp);
+							tmp = gettok();
 							break;
 						} else {
 							errno = EINVAL;
@@ -267,7 +340,6 @@ struct token* gettok(void) {
 				free(to_rm);
 				return gettok();
 			}
-
 			ret->type = PREPROC;
 			break;
 

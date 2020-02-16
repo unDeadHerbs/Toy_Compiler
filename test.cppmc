@@ -1,11 +1,16 @@
+void basic(void){
+     do nothing;
+}
+
 #define f(x) \
 (x+x)
 
-f(cats);
+f(cats __LINE__);
 
 #undef f
 
-f(cats);
+f(cats __FILE__);
+
 
 void print(char*s){
 	while(*s!='\0'){
@@ -15,5 +20,5 @@ void print(char*s){
 }
 
 int main(){
-	print("Hello, World!\n");
+	print("Hello, World\n");
 }
