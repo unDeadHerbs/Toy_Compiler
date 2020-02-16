@@ -6,7 +6,6 @@ void print(char*s){
 }
 
 int main(){
-	print("Hello, World\n");
-	struct Type value;
-	erro hat;
+	print("Hello, World!\n");
+	struct Type value=3?2:3;
 }

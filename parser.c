@@ -6,11 +6,14 @@
 
 #if 0
 #define DBG(MSG) printf("%s:%d MGS=%s\n", __FILE__, __LINE__, MSG)
-#define DBGi(MSG, NUM) printf("%s:%d\t%s=%d\n", __FILE__, __LINE__, MSG, NUM)
+#define DBGi(MSG, \
+             NUM) /*printf("%s:%d\t%s=%d\n", __FILE__, __LINE__, MSG, NUM)*/
 #else
 #define DBG(MSG)
 #define DBGi(MSG, NUM)
 #endif
+
+#define WERROR 1
 
 void free_node(struct node* n) {
 	if (n == NULL) return;
@@ -72,33 +75,46 @@ static struct token* current_token = NULL;
 		strcpy(NAME->tok->token, DESCRIPTION);                       \
 	} while (0)
 
-#define parse_error(DESCRIPTION)                                      \
-	do {                                                                \
-		fprintf(stderr, "parse: %s got \"%s\" on line %d\n", DESCRIPTION, \
-		        cur_tok(), current_token->line);                          \
-		exit(-1);                                                         \
+#define parse_error(DESCRIPTION)                                               \
+	do {                                                                         \
+		char buffer[33];                                                           \
+		struct node* error;                                                        \
+		sprintf(buffer, "parse: %s got \"%s\" on line %d", DESCRIPTION, cur_tok(), \
+		        current_token->line);                                              \
+		make_node(error, buffer);                                                  \
+		fprintf(stderr, "%s\n", buffer);                                           \
+		if (WERROR) exit(-1);                                                      \
+                                                                               \
+		return error;                                                              \
 	} while (0)
 
-#define append_tok_to(TO_NODE)        \
-	do {                                \
-		struct node* temp_name;           \
-		use_tok_as(temp_name);            \
-		append_child(TO_NODE, temp_name); \
+#define append_tok_to(TO_NODE)                  \
+	do {                                          \
+		struct node* temp_name_append_to;           \
+		use_tok_as(temp_name_append_to);            \
+		append_child(TO_NODE, temp_name_append_to); \
 	} while (0)
 
-#define nom_tok()           \
-	do {                      \
-		struct node* temp_name; \
-		use_tok_as(temp_name);  \
+#define nom_tok()               \
+	do {                          \
+		struct node* temp_name_nom; \
+		use_tok_as(temp_name_nom);  \
 	} while (0)
 
 #define nom_expect(STR)                                                    \
 	do {                                                                     \
-		struct node* temp_name;                                                \
-		if (0 != strcmp(STR, cur_tok()))                                       \
-			fprintf(stderr, "parse: Expected \"%s\" got \"%s\" on line %d", STR, \
+		struct node* temp_name_nom_expect;                                     \
+		if (0 != strcmp(STR, cur_tok())) {                                     \
+			char buffer[33];                                                     \
+			sprintf(buffer, "parse: Expected \"%s\" got \"%s\" on line %d", STR, \
 			        cur_tok(), current_token->line);                             \
-		use_tok_as(temp_name);                                                 \
+			make_node(temp_name_nom_expect, buffer);                             \
+			fprintf(stderr, "%s\n", buffer);                                     \
+			if (WERROR) exit(-1);                                                \
+			nom_tok();                                                           \
+			return temp_name_nom_expect;                                         \
+		}                                                                      \
+		use_tok_as(temp_name_nom_expect);                                      \
 	} while (0)
 
 /* -^- -_-_- -^- Divider -^- -_-_- -^- */
@@ -152,21 +168,21 @@ static struct operator{
 	char symbol2[4];
 }
 operators_in_prescience[] = {
-    {ltr, ",", ""},      {rtl, "|=", ""},     {rtl, "^=", ""},
-    {rtl, "&=", ""},     {rtl, ">>=", ""},    {rtl, "<<=", ""},
-    {rtl, "%=", ""},     {rtl, "/=", ""},     {rtl, "*=", ""},
-    {rtl, "-=", ""},     {rtl, "+=", ""},     {ltr, "=", ""},
-    {ltr, "||", ""},     {ltr, "&&", ""},     {ltr, "|", ""},
-    {ltr, "^", ""},      {ltr, "&", ""},      {ltr, "!=", ""},
-    {ltr, "==", ""},     {ltr, ">=", ""},     {ltr, ">", ""},
-    {ltr, "<=", ""},     {ltr, "<", ""},      {ltr, "<=>", ""},
-    {ltr, ">>", ""},     {ltr, "<<", ""},     {ltr, "-", ""},
-    {ltr, "+", ""},      {ltr, "%", ""},      {ltr, "/", ""},
-    {ltr, "*", ""},      {unary_l, "&", ""},  {unary_l, "*", ""},
-    {unary_l, "~", ""},  {unary_l, "!", ""},  {unary_l, "--", ""},
-    {unary_l, "++", ""}, {unary_r, "[", "]"}, {unary_r, "(", ")"},
-    {unary_r, "--", ""}, {unary_r, "++", ""}, {ltr, "::", ""},
-    {unary_l, "::", ""}};
+    {ltr, "?:", ""},     {ltr, "?", ":"},     {ltr, ",", ""},
+    {rtl, "|=", ""},     {rtl, "^=", ""},     {rtl, "&=", ""},
+    {rtl, ">>=", ""},    {rtl, "<<=", ""},    {rtl, "%=", ""},
+    {rtl, "/=", ""},     {rtl, "*=", ""},     {rtl, "-=", ""},
+    {rtl, "+=", ""},     {ltr, "=", ""},      {ltr, "||", ""},
+    {ltr, "&&", ""},     {ltr, "|", ""},      {ltr, "^", ""},
+    {ltr, "&", ""},      {ltr, "!=", ""},     {ltr, "==", ""},
+    {ltr, ">=", ""},     {ltr, ">", ""},      {ltr, "<=", ""},
+    {ltr, "<", ""},      {ltr, "<=>", ""},    {ltr, ">>", ""},
+    {ltr, "<<", ""},     {ltr, "-", ""},      {ltr, "+", ""},
+    {ltr, "%", ""},      {ltr, "/", ""},      {ltr, "*", ""},
+    {unary_l, "&", ""},  {unary_l, "*", ""},  {unary_l, "~", ""},
+    {unary_l, "!", ""},  {unary_l, "--", ""}, {unary_l, "++", ""},
+    {unary_r, "[", "]"}, {unary_r, "(", ")"}, {unary_r, "--", ""},
+    {unary_r, "++", ""}, {ltr, "::", ""},     {unary_l, "::", ""}};
 /* Some C operators are excluded, see notes file.*/
 
 struct node* parse_expression(void);
@@ -217,7 +233,7 @@ struct node* parse_op(int op) {
 struct node* parse_binary(int op) {
 	struct node* op_t = NULL;
 	struct node* value;
-	DBG("OP_Binary");
+	/*DBG("OP_Binary");*/
 	DBGi("op", op);
 	value = parse_op(op + 1);
 	while (0 == strcmp(operators_in_prescience[op].symbol, cur_tok())) {
@@ -227,6 +243,10 @@ struct node* parse_binary(int op) {
 		if (0 != strcmp("", operators_in_prescience[op].symbol2)) {
 			append_child(op_t, value);
 			nom_expect(operators_in_prescience[op].symbol2);
+			if (0 == strcmp("?", operators_in_prescience[op].symbol)) {
+				value = parse_op(op + 1);
+				append_child(op_t, value);
+			}
 			return op_t;
 		}
 	}
@@ -238,7 +258,7 @@ struct node* parse_binary(int op) {
 struct node* parse_unary(int op) {
 	struct node* op_t = NULL;
 	struct node* value;
-	DBG("OP_Unary");
+	/*DBG("OP_Unary");*/
 	DBGi("op", op);
 	if (operators_in_prescience[op].asoc == unary_l)
 		if (0 == strcmp(operators_in_prescience[op].symbol, cur_tok()))
@@ -321,7 +341,9 @@ struct node* parse_statement() {
 		}
 		return decl;
 	}
-	return parse_expression();
+	statement = parse_expression();
+	nom_expect(";");
+	return statement;
 }
 
 struct node* parse_block() {
