@@ -1,0 +1,5 @@
+This is a toy compiler for personal enjoyment and exploration of
+compiler and language design.
+
+My thoughts and doodelings are in [[notes.org]].  They are unedited and
+possibly unreadable.

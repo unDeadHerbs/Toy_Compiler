@@ -221,3 +221,372 @@
   interface side.
   
 * 09647 - Moved Relivant logs into project folder.
+* 09662 - pretty types
+  Watching [[https://youtube.com/watch?v=dDtZLm7HIJs][Numberphile's functional parsing video]].
+
+  The type of the parse presented in this video is an interesting
+  structure, (This is more about Haskell's type system than the
+  parser).
+
+  #+BEGIN_SRC haskell
+  type Parser a = String -> [(a,String)]
+  #+END_SRC
+  
+  I like this structure but would prefer using the regex style of
+  operators.
+
+  #+BEGIN_SRC cppmc
+  typedef Parser a = String -> (a,String)*
+  #+END_SRC
+
+  Taking a leaf out of APL's book (any any other post fix language) we
+  can restructure the right side to read right to left.
+
+  #+BEGIN_SRC cppmc
+  typedef Parser a = Function String *(a,String)
+  typedef Parser a = Function String *,a String
+  // I don't like the second option. Prefix comma seems nonsense.
+  #+END_SRC
+
+  Doing the same transform onto the ~typedef~.
+
+  #+BEGIN_SRC cppmc
+  typedef (Parser a) Funciton String *(a,String)
+  #+END_SRC
+
+  This is now very similar to a lisp with elided parentheses.
+
+  #+BEGIN_SRC lisp
+  (typedef (Parser a) (Funciton String (* (, a String))))
+  #+END_SRC
+
+  I do want to remain conformint to the C type system, ideally any C
+  code should be valid cppmc.
+
+  #+BEGIN_SRC c
+  typedef Ret(*Name)(Params);
+  #+END_SRC
+
+  Although C lacks the generics of cpp.
+
+  #+BEGIN_SRC cpp
+  template<typename Tree>
+  typdef vector<pair<Tree,String>>(*Parser)(String);
+  #+END_SRC
+
+  Hmm, I don't think I can maintain backwards compatibility with
+  function pointers in most situations as I'm making a new concept of
+  the templated Block.
+
+  Can I make a templated type aliasing system that mirrors the syntax
+  for my block naming?  That'll be easier after I've made the block
+  naming system.
+
+  I can simply maintain the ~typedef~ keyword for this.
+
+  #+BEGIN_SRC cppmc
+  typedef { export int left;
+            export int right;} Point2D;
+  #+END_SRC
+
+  This also adds the ~export~ keyword to non-imitate blocks to declare
+  which variables are public or private.
+
+  This doesn't provide an easy of extending a type with inheritance,
+  but that's not particularly different from just including the parent
+  type as an internal.  The main differences are that virtual
+  functions are missing and that the child type can't be passed to
+  functions that expect the parent's.
+
+  The primary value of virtuals and inheritance are both captured by
+  cpp's "Concepts" idea.  Then if a public local need to be reexported
+  from an inner class to maintain concept compatibility that's not hard
+  to do.
+
+  #+BEGIN_SRC cppmc
+  typedef {	export int parent_public;
+          } Parent;
+  typedef {	Parent internal;
+           	export internal::parrent_public;
+          } Child;
+  #+END_SRC
+** Generators are a reasonable extension of the block thread type.
+   #+BEGIN_SRC cppmc
+   typedef {	int a;
+            	int b;
+            	for(a=0;a<10;a++)
+            		for(b=0;b<a;b++)
+            			yield a+b;
+           } Step_Generator;
+   #+END_SRC
+* 09665 - my strange usage of macro functions
+  I use macro functions rather extensively for a weird feature they
+  have.  I can while in them access the containing scope (like a with
+  block) and I can return in multiple ways out of them.  I very rarely
+  use scope leak as I don't want to have to maintain that.  By
+  multiple return paths I mean that I can:
+
+  1. return from the calling function with ~return~
+  2. return to the calling function by just ending
+  3. leave the calling function's current loop with ~break~
+
+  I also rarely use these features, but they are convenient for
+  testing Ideas.
+
+  Similar to the "public if not control code" philosophy that I wish
+  to implement over classes, I can try to replicate these features in
+  a type of function definition so that they can be used for playing
+  but not production.
+
+  The easy solution to this is to add requirements to macros once they
+  meat the criterion of "in actual use".
+** 09679
+   I've seen cpp code redefine keywords to mess with other
+   programmer's classes.
+
+   #+BEGIN_SRC cpp
+   #define class struct
+   #define private public
+   #define protected public
+   #+END_SRC
+
+   This should also be forbidden from being used in non-cowboy code.
+* 09666
+  If a code segment needs to be migrated to another system the parsed
+  copy must be migrated, the compiled code can't be.  (This isn't
+  always true as the systems may be the same arch, but that's an
+  optimization for later.)  When a segment is compiled (without
+  debugging symbols) all of its type annotations will be removed by
+  the optimizer.  As the type definition system supports code objects
+  that are evaluated later the typing system must occur entirely
+  within the interpreter.  
+* 09666 - cppmc name and standards
+  I've called this language a variety of names during these logs, but
+  the language has changed away from any of these fitting perfectly.
+  "C++ minus C" is the name that I've been using as an acronym, but
+  I've slowly been adding more C features and removing C++ features so
+  that a more general hardware support is manageable.  "Maintainable
+  C" Was being used for a little while, but that has a derogatory tone
+  to it.  I've been tossing around in my head the name "Language 1"
+  and having the language be standard of features like RISC-V with
+  sets of additions that can be implemented or not. 
+
+  Following along with that idea.  The extensions to the language
+  could follow along with the processor extensions that RISC-V offers
+  for early versions and maybe dissect them further based on future
+  requirements.  A program would specify which language features it
+  required to compile/run and the language features enabled would be
+  provided as compile time constants.
+
+  That doesn't explicitly fit with the portable methodology of the
+  language.  Currently compile time constants are interpreted at parse
+  time, they would have to be interpreted at the time the JITC sees
+  them.  That's fine.
+
+  I should lay out the way feature sets are specified.  It's important
+  that feature sets can be divided in the future.  Example, "Maths"
+  might be a feature early on but then be divided into "Complex" and
+  "Rational".  A system could then offer support for the full "Maths"
+  extension or only parts of it, but if it already offered support no
+  update would be needed to the standard to specify this feature
+  division.
+
+  There should also be a set of extensions for debatable language
+  features, such as exceptions, since they change parts of the ABI and
+  how the compilation has to care about things.  These features must
+  also be settable from within a scope.  If these are re-settable for
+  each scope then that's essentially changing the ABI to being part of
+  the type-system as a function can declare itself as "No-Except"
+
+  ... Laptop overheated and crashed
+
+  That's up to the optimizer to treat them differently and not really
+  the language's problem.  Some features are up to the optimizer, some
+  to the parser, and some to the compiler.  Each of these should be
+  accessable to the program writer.  Optimizer and Code-Generator
+  feature flags can be queried at any point in the code, but a parser
+  level feature must be queried in the pre-processor (otherwise parsing
+  is impossible).
+
+  Some important efficiency decisions depend on hardware features,
+  such as which types are supported on a system.  I.e. if 64bit is
+  available or if 32bit must be used; or, in a more extreme case, if
+  this is an 8bit byte system.
+
+  If such differing type decisions can be made at the compile time
+  they could reasonably differ for two pieces of code that might need
+  to share a variable of such a type, say a global variable and a
+  distributed/differed scope.  As such when a scope offers a decision
+  based on a compile time constant, such a decision can effect the
+  options available another decision point.  A linter tool should be
+  added into the parser(?) to detect when such has happened, to make
+  this available to static analyses if a decision to be made at
+  compile time there will have to be some restrictions to it.  I
+  propose that compile time decisions be done in ~IF~ blocks rather
+  than ~if~ blocks, this will also specify that they can leak scope
+  back up to their parent (so that variables can be declared within
+  them).
+
+  For some of the stranger systems that this might compile to, some
+  features of the system may be unavailable.  For example, if java
+  ... That's not right, I can't have this language export to another
+  language seeing as system migration is a feature.  Well, that can be
+  marked as a feature of the compiler and so if that is disabled at a
+  high level in the project (namely the top most scope) then the
+  project could reasonably be compiled into another language.  Which
+  version of the language is being written against can be declared at
+  the top of a file (a shebang line) and future versions can specify
+  what exertions are being added/specified and what they should be
+  assumed to be for older versions of the language.  So if portability
+  is added in V3 it would specify that programs written in V2 require
+  the code is compiled nonportablly.  If this is incorrect for the
+  file, the maintainer can update it.  This will hopefully prevent
+  bugs like those from when ~volatile~ was introduced to C (code had
+  been checking hardware memory mapped values in hot loops, but the
+  optimizer thorough this out if the value wasn't marked volatile
+  (since all variables were volatile before that keyword was added)).
+
+  I do want to offer a few different syntax options.  More precisely I
+  want to support a lisp, but a general framework for different syntax
+  features would be good.  What are some other syntax features that
+  might change this? Automatic types and implicit variable declaration
+  both make parsing much harder.  It's also the case that not only are
+  these important features that the parser may or may not support, but
+  maintainers may also wish to enable or disable these features
+  explicitly based on the needs of the code.
+
+  Which features are required to be know at different places restricts
+  and expands the syntax that must be used for these features.  The
+  parses settings must be specified on a (mostly) per file basis (the
+  ~#include~ directive makes that wobbly); but, the compile time
+  features don't need to be specified at such a broad scale as they
+  can vary from scope to scope, ... I guess those are really the only
+  two places that the user can query, the language and the system.
+  Technically there is also run time as separate to parse time and
+  compile time, but that's what the majority of the language is aimed
+  towards.
+
+  Interestingly, this is the same three distinctions that one has
+  access to in C++.  One can specify compile time parameters with the
+  prepossessor, compile time with ~constexper~ and ~template~, and
+  runtime with the rest of the language.  Interestingly ~constexper~
+  and ~volatile~ are both more of suggestions to the optimizer and
+  warnings for the user than they are compile time controls, the C++
+  compile time is mostly pretended to not exist by programming against
+  a theoretical machine rather than the metal.  The keywords ~const~
+  and ~register~ are also interesting studies into the history of
+  C/C++ and this layer of interactions.
+* 09668 - Let's look at how that'll work
+  For the parser
+  #+BEGIN_SRC cppmc
+  #LANGUAGE_VERSION 1
+  #STYLE C
+  #FORBID IMPLICIT_VARIABLES
+  #REQUIRE TYPEDEF
+  #+END_SRC
+
+  And for the compiler
+  #+BEGIN_SRC cppmc
+  IF(BIT_32){
+      class nq_uint64_t{
+          nq_uint32_t low,high;
+          nq_uint64_t operator+(nq_uint64_t rhs);
+      } var_name;
+  }ELSE{
+      uint64_t var_name;
+  }
+  #+END_SRC
+
+  If the ~#STYLE~ is set to ~LISP~ I'm not sure how may other parser
+  options there will be?  I do have my hopes for the scope operator in
+  name lookup, but that's a later feature.
+
+  Let's wright this down a little more formally.
+** The Language
+   This is a standards document for which features must exist and what
+   extensions to them exist in the parsing and execution of The
+   Language.
+*** Parser Version 1
+    The first non-comment line of a code file shall specify which
+    version of The Language standard it is coded against.  This is
+    done with the ~LANGUAGE_VERSION~ directive.
+
+    The second non-comment line of a code file shall specify which
+    language style the file is to be parsed with.  This is done with
+    the ~STYLE~ directive.
+
+    Within a style features can be required or forbidden with the
+    ~REQUIRE~ and ~FORBID~ directives.
+**** Comments
+     A C style multi-line comment is acceptable at any point within a
+     code file.  Other styles of comments may be enabled by the
+     language style.
+**** Communicating with the Parser
+     Communications to the parser are lines which the first
+     non-white-space character is ~#~.
+**** C Style
+***** ENABLED LINE_COMMENTS      
+      The ~\\~ token begins a line comment.
+***** DISABLED NESTED_BLOCK_COMMENTS
+**** LISP Style
+***** Tokens
+      An identifier is composed of characters from the set
+      ~[a-zA-Z0-9_]~ and contains at least one non-numeric character.
+      Additionally tokens may not begin with three underscores ~_~ as
+      this is reserved for internal usage.
+
+      The symbols ~(~, ~)~, ~{~, ~}~, ~[~, and ~]~ may be used as
+      brackets and are interchangeable with the exception that they
+      must be correctly matched.
+
+      All other characters are invalid unless they are in a token
+      added by an extension.
+***** ENABLED LINE_COMMENTS
+      The ~;~ token starts a line comment.
+*** Executor Version 1
+    As the language is both interpret-able and compile-able the
+    program that does this will be refereed to as The Executor.
+
+    The language features and settings supported by the Executor
+    generally follow the extensions laid out by the RISC-V standard.
+
+    There are only three tokens for communicating with The Executor:
+    ~IF~, ~ELSE~, and ~FAIL~.
+
+    Each option has a name that it can be referred to by.  Option
+    names are not valid identifiers and new options may be defined
+    in each version.
+**** IF and ELSE
+     Only options, integral literals, relational operators, and
+     boolean operators may be refereed to within the condition of an
+     ~IF~.
+
+     The relational operators permitted are: ~<~, ~LESS~, ~<=~,
+     ~LESS_EQ~, ~>~, ~GREATER~, ~>=~, ~GREATER_EQ~, ~==~, and ~EQUAL~.
+
+     The boolean operators permitted are: ~&&~, ~AND~, ~||~, ~OR~,
+     ~!~, and ~NOT~.
+**** FAIL
+     The ~FAIL~ directive presents as a function in The Language and
+     can be performed either with or without arguments.
+
+     If arguments are provided to ~FAIL~, they are provided as a
+     reason for the failure.  What is done with them is unspecified.
+**** Options
+     An option can be either a boolean or an integral value.  All
+     names of options will be in all caps.
+***** INTEGER_BITS
+      The number of bits of the base system.
+      The valid values for this are: 8, 16, 32, 64, and 128.
+* 09669 - Intermediate Representation
+  An intermediate representation between the parser and the executor
+  is needed.  For the sake of simplicity this IR will be a close
+  variant of the ~LISP~ style language.  This IR isn't technically
+  part of the language standard, it is just and artifact of my
+  tooling.  This also offers an IR for the styles to transpile to each
+  other through.
+
+  I needs to study the optimizations that are normally done.  I want
+  to convert all function calls from construction and destruction into
+  regular function calls, but I don't know how that'll effect the
+  optimizer's knowledge of lifetimes and if that's safe to lose.
