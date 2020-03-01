@@ -163,11 +163,11 @@ struct node* parse_type() {
 
 enum operator_associativity { ltr, rtl, unary_l, unary_r };
 static struct operator{
-	enum operator_associativity asoc;
-	char symbol[4];
-	char symbol2[4];
+	enum operator_associativity const asoc;
+	char const symbol[4];
+	char const symbol2[4];
 }
-operators_in_prescience[] = {
+const operators_in_prescience[] = {
     {ltr, "?:", ""},     {ltr, "?", ":"},     {ltr, ",", ""},
     {rtl, "|=", ""},     {rtl, "^=", ""},     {rtl, "&=", ""},
     {rtl, ">>=", ""},    {rtl, "<<=", ""},    {rtl, "%=", ""},
@@ -183,7 +183,9 @@ operators_in_prescience[] = {
     {unary_l, "!", ""},  {unary_l, "--", ""}, {unary_l, "++", ""},
     {unary_r, "[", "]"}, {unary_r, "(", ")"}, {unary_r, "--", ""},
     {unary_r, "++", ""}, {ltr, "::", ""},     {unary_l, "::", ""}};
-/* Some C operators are excluded, see notes file.*/
+/* Some C operators are excluded and some extras are included.  See
+ * notes file for more details.
+ */
 
 struct node* parse_expression(void);
 
@@ -237,7 +239,10 @@ struct node* parse_binary(int op) {
 	DBGi("op", op);
 	value = parse_op(op + 1);
 	while (0 == strcmp(operators_in_prescience[op].symbol, cur_tok())) {
-		use_tok_as(op_t);
+		if (NULL == op_t)
+			use_tok_as(op_t);
+		else
+			nom_expect(operators_in_prescience[op].symbol);
 		append_child(op_t, value);
 		value = parse_op(op + 1);
 		if (0 != strcmp("", operators_in_prescience[op].symbol2)) {

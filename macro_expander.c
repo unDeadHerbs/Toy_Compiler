@@ -327,7 +327,7 @@ struct token* gettok(void) {
 					;
 				while (*++f == ' ')
 					;
-				if (*f == '"') { /* Not local (library <>) not implimented. */
+				if (*f == '"') { /* Non-local (libraries <>) not implimented. */
 					char* e = f;
 					while (*++e != '"')
 						;
